@@ -14,6 +14,11 @@ resource "google_firestore_index" "chunks_embedding" {
   query_scope = "COLLECTION"
 
   fields {
+    field_path = "__name__"
+    order      = "ASCENDING"
+  }
+
+  fields {
     field_path = "embedding"
     vector_config {
       dimension = 768
