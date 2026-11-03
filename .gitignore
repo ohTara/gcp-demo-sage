@@ -22,3 +22,5 @@ Thumbs.db
 # Claude Code (locale), tranne gli strumenti per la versione studenti (vedi .claude/student-version-diffs.md)
 .claude/*
 !.claude/student-version*
+.terraform/
+*.tfstate*

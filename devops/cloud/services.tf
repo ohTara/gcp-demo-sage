@@ -1,13 +1,15 @@
+# RICOSTRUITO dallo stato Terraform: elenco delle API presenti in state.
 locals {
   required_apis = [
-    "run.googleapis.com",              # Cloud Run
-    "artifactregistry.googleapis.com", # Artifact Registry (equivalente GCP di ECR)
-    "iam.googleapis.com",              # IAM / service account
-    "iamcredentials.googleapis.com",   # Workload Identity Federation (pipeline GitHub)
+    "aiplatform.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "bigquery.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    "firestore.googleapis.com",
+    "iam.googleapis.com",
+    "run.googleapis.com",
     "serviceusage.googleapis.com",
-    "aiplatform.googleapis.com", # Vertex AI (Gemini)
-    "storage.googleapis.com",    # Bucket dei documenti
+    "storage.googleapis.com",
   ]
 }
 
@@ -17,6 +19,5 @@ resource "google_project_service" "apis" {
   project = var.project_id
   service = each.value
 
-  # Non disabilitare le API quando la risorsa viene distrutta.
   disable_on_destroy = false
 }
