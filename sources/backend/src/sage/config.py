@@ -31,6 +31,9 @@ class AppConfig(BaseSettings):
     bq_dataset: str = "sage_analytics"
     bq_table: str = "question_log"
 
+    # Cloud Storage (instructions bucket for Task 2)
+    instructions_bucket: str = ""
+
     # Ingestion
     chunk_max_chars: int = 1500
 
@@ -45,6 +48,8 @@ class AppConfig(BaseSettings):
         self.firestore_database = self.resource_prefix
         # BigQuery dataset ids allow only letters, digits and underscores.
         self.bq_dataset = f"{self.resource_prefix.replace('-', '_')}_{self.bq_dataset}"
+        # Instructions bucket: <prefix>instructions in shared mode, <project_id>-instructions in dedicated
+        self.instructions_bucket = f"{self.resource_prefix}instructions"
         return self
 
 

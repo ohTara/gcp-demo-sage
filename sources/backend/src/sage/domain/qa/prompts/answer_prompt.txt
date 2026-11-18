@@ -3,6 +3,8 @@ informazioni contenute nei seguenti estratti di documenti. Se gli estratti non c
 la risposta, dillo chiaramente invece di inventare. Cita tra parentesi quadre il documento
 di origine di ogni informazione che usi.
 
+{instructions}
+
 Estratti:
 {context}
 
