@@ -8,12 +8,10 @@ separazione dev/test/prod. Ogni studente applica questo modulo sul proprio proge
 | File | Risorsa | A cosa serve |
 |---|---|---|
 | `services.tf` | `google_project_service` | Abilita le API GCP usate dal progetto |
-| `storage.tf` | `google_storage_bucket` | Bucket `<project_id>-sage-docs` per i documenti sorgente |
+| `docs.tf` | `google_storage_bucket` | Bucket `<project_id>-sage-docs` (dedicato) o `<prefisso>-sage-docs` (condiviso) |
 | `firestore.tf` | `google_firestore_database`, `google_firestore_index` | Firestore Native + indice vettoriale sul campo `embedding` della collection `chunks` |
-| `bigquery.tf` | `google_bigquery_dataset`, `google_bigquery_table` | Dataset `sage_analytics` e tabella `question_log` per l'analytics delle domande |
-| `artifact_registry.tf` | `google_artifact_registry_repository` | Repository Docker per le immagini dell'API |
-| `iam.tf` | `google_service_account`, `google_project_iam_member` | Service account runtime di Cloud Run, a privilegio minimo |
-| `cloud_run.tf` | `google_cloud_run_v2_service`, `google_cloud_run_v2_service_iam_member` | Il servizio che espone `/api/ask` |
+| `bigquery.tf` | `google_bigquery_dataset`, `google_bigquery_table` | Dataset `sage_analytics` o `<prefisso>_sage_analytics` e tabella `question_log` |
+| `sage_backend.tf` | `google_artifact_registry_repository`, `google_cloud_run_v2_service`, `google_service_account`, `google_project_iam_member` | Artifact Registry, Cloud Run (`sage-backend` o `<prefisso>-sage-backend`), SA runtime, IAM |
 
 Niente Secret Manager: Sage chiama Vertex AI con Application Default Credentials, non
 servono API key esterne da custodire come segreto.

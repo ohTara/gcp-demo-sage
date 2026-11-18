@@ -23,12 +23,12 @@ Utente ──POST /api/ask──▶ API FastAPI su Cloud Run
 
 | Componente | Servizio GCP | Ruolo |
 |---|---|---|
-| API | Cloud Run | Servizio HTTP stateless, `POST /api/ask` + `GET /health` |
+| API | Cloud Run | Servizio HTTP stateless, `POST /api/ask` + `GET /health` (nome: `sage-backend` o `<prefisso>-sage-backend`) |
 | Base di conoscenza | Firestore (Native mode) | Collection `chunks`: testo + embedding + metadati, interrogata con `find_nearest` |
 | LLM ed embedding | Vertex AI (Gemini) | Nessuna API key: autenticazione via ADC / service account |
-| Documenti sorgente | Cloud Storage | Bucket `<project_id>-sage-docs` |
+| Documenti sorgente | Cloud Storage | Bucket `<project_id>-sage-docs` (dedicato) o `<prefisso>-sage-docs` (condiviso) |
 | Analytics | BigQuery | Tabella `question_log`, scritta in modo sincrono nella richiesta |
-| Immagini container | Artifact Registry | Popolato dalla pipeline di deploy |
+| Immagini container | Artifact Registry | Repository `sage-backend` o `<prefisso>-sage-backend`, popolato dalla pipeline di deploy |
 
 La pipeline di chunking/embedding **non gira dentro l'API**: è lo script
 `sources/backend/utils/ingest_documents.py`, eseguito manualmente per popolare Firestore a
@@ -88,17 +88,48 @@ gcloud config set project its-ict-<nome>-<cognome>
 
 ### 2. Configura le variabili locali e Terraform
 
+Crea i tre file di configurazione (sono nel `.gitignore`, non vanno committati):
+
 ```bash
-cp sources/backend/.env.example sources/backend/.env
-cp devops/cloud/terraform.tfvars.example devops/cloud/terraform.tfvars
-cp devops/cloud/backend.hcl.example devops/cloud/backend.hcl
+# 1. Variabili backend (copia da .env.example se esiste, altrimenti crea nuovo)
+cp sources/backend/.env.example sources/backend/.env 2>/dev/null || cat > sources/backend/.env <<'EOF'
+# Obbligatorio: il tuo project id GCP (its-ict-<nome>-<cognome> o progetto condiviso)
+SAGE_PROJECT_ID=its-ict-sage-csp26
+
+# Progetto condiviso: valorizza il prefisso (its-ict-sage-<nome>-<cognome>).
+# Lascialo vuoto con un progetto dedicato.
+SAGE_RESOURCE_PREFIX=its-ict-sage-<nome>-<cognome>
+
+# Opzionali: i valori di default vanno bene per il corso
+SAGE_REGION=europe-west6
+SAGE_FIRESTORE_COLLECTION=chunks
+SAGE_TOP_K=5
+SAGE_CHAT_MODEL=gemini-2.5-flash
+SAGE_EMBEDDING_MODEL=text-embedding-004
+SAGE_EMBEDDING_DIMENSION=768
+SAGE_BQ_DATASET=sage_analytics
+SAGE_BQ_TABLE=question_log
+SAGE_CHUNK_MAX_CHARS=1500
+EOF
+
+# 2. Variabili Terraform
+cat > devops/cloud/terraform.tfvars <<'EOF'
+project_id = "its-ict-sage-csp26"
+region     = "europe-west6"
+resource_prefix = "its-ict-sage-<nome>-<cognome>"
+EOF
+
+# 3. Backend Terraform (bucket per lo state)
+cat > devops/cloud/backend.hcl <<'EOF'
+bucket = "its-ict-sage-<nome>-<cognome>-tfstate"
+prefix = "sage"
+EOF
 ```
 
-In tutti e tre i file sostituisci `its-ict-sage-csp26` con il tuo project id reale
-(`its-ict-<nome>-<cognome>`); in un progetto condiviso usa il progetto condiviso come
-`project_id` e valorizza anche il prefisso (`SAGE_RESOURCE_PREFIX` in `.env`,
-`resource_prefix` in `terraform.tfvars`, nome del bucket in `backend.hcl`). Questi tre file
-sono nel `.gitignore`: restano solo sulla tua macchina/nel tuo ambiente CI, non finiscono mai nel repository.
+Nei tre file sopra sostituisci `its-ict-sage-<nome>-<cognome>` con il tuo prefisso personale
+(es. `its-ict-sage-luca-tarallo`); `project_id` resta il progetto condiviso del corso
+(`its-ict-sage-csp26`). In un progetto dedicato (uno a testa), lascia `resource_prefix` vuoto
+e usa `its-ict-<nome>-<cognome>` come `project_id`.
 
 ### 3. Bootstrap una tantum del progetto GCP e delle pipeline
 
@@ -108,10 +139,15 @@ statiche) e ti guida nella configurazione delle variabili del repository GitHub.
 
 ### 4. Crea l'infrastruttura con Terraform
 
-`devops/cloud/` parte senza risorse: i file `.tf` (bucket, Firestore, BigQuery, Cloud Run,
-IAM, Artifact Registry, ...) li scrivi tu, modulo per modulo, seguendo gli esercizi del
-corso. Restano già pronti solo i file di configurazione (`backend.hcl`, `terraform.tfvars`,
-copiati dai rispettivi `.example` al passo 2).
+I file `.tf` in `devops/cloud/` definiscono tutte le risorse:
+- `services.tf` — API GCP da abilitare
+- `firestore.tf` — Database Firestore Native + indice vettoriale
+- `bigquery.tf` — Dataset e tabella BigQuery per analytics
+- `sage_backend.tf` — Artifact Registry, Cloud Run, Service Account, IAM
+- `docs.tf` — Bucket Cloud Storage per i documenti sorgente
+- `providers.tf`, `variables.tf`, `locals.tf` — configurazione provider e naming
+
+I file di configurazione (`backend.hcl`, `terraform.tfvars`) li hai creati al passo 2.
 
 Una volta scritte le risorse, il flusso resta questo, in locale (oppure lanciando
 manualmente il workflow `terraform.yml` — tab **Actions** del repository → *terraform* →
@@ -164,18 +200,30 @@ curl -X POST http://localhost:8000/api/ask \
 
 ### 7. Build e deploy su Cloud Run
 
-In locale:
+In locale (progetto dedicato):
 
 ```bash
 cd sources/backend
-docker build -t europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage/sage:manual .
-docker push europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage/sage:manual
-gcloud run deploy sage --project <il-tuo-project-id> --region europe-west6 \
-  --image europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage/sage:manual
+docker build -t europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage-backend/sage-backend:manual .
+docker push europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage-backend/sage-backend:manual
+gcloud run deploy sage-backend --project <il-tuo-project-id> --region europe-west6 \
+  --image europe-west6-docker.pkg.dev/<il-tuo-project-id>/sage-backend/sage-backend:manual
+```
+
+In locale (progetto condiviso, con prefisso `its-ict-sage-luca-tarallo`):
+
+```bash
+cd sources/backend
+PREFIX=its-ict-sage-luca-tarallo
+docker build -t europe-west6-docker.pkg.dev/<il-tuo-project-id>/${PREFIX}-sage-backend/${PREFIX}-sage-backend:manual .
+docker push europe-west6-docker.pkg.dev/<il-tuo-project-id>/${PREFIX}-sage-backend/${PREFIX}-sage-backend:manual
+gcloud run deploy ${PREFIX}-sage-backend --project <il-tuo-project-id> --region europe-west6 \
+  --image europe-west6-docker.pkg.dev/<il-tuo-project-id>/${PREFIX}-sage-backend/${PREFIX}-sage-backend:manual
 ```
 
 Oppure lascia fare alla pipeline: un push su `main` che tocca `sources/backend/**` avvia
 automaticamente `deploy.yml` (build dell'immagine, push su Artifact Registry, deploy).
+La pipeline usa le variabili `RESOURCE_PREFIX` e `PROJECT_ID` del repository GitHub.
 
 Questo deploy funziona anche prima di aver creato Firestore/BigQuery con Terraform (passo 4):
 Sage risponde comunque, vedi [Firestore e BigQuery sono opzionali](#firestore-e-bigquery-sono-opzionali).
@@ -183,7 +231,12 @@ Sage risponde comunque, vedi [Firestore e BigQuery sono opzionali](#firestore-e-
 ### 8. Testa l'API deployata
 
 ```bash
-SAGE_URL=$(gcloud run services describe sage --project <il-tuo-project-id> \
+# Progetto dedicato
+SERVICE=sage-backend
+# Progetto condiviso
+# SERVICE=its-ict-sage-luca-tarallo-sage-backend
+
+SAGE_URL=$(gcloud run services describe $SERVICE --project <il-tuo-project-id> \
   --region europe-west6 --format='value(status.url)')
 
 curl -X POST "$SAGE_URL/api/ask" \

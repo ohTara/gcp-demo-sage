@@ -1,6 +1,7 @@
 locals {
-  # Cloud Run, Artifact Registry, service account: "<prefisso>-<app_name>".
-  app_name = "${var.resource_prefix}-${var.app_name}"
+  # Cloud Run, Artifact Registry, service account: "<prefisso>-<app_name>" in shared project,
+  # oppure solo "<app_name>" in dedicated project.
+  app_name = var.resource_prefix != "" ? "${var.resource_prefix}-${var.app_name}" : var.app_name
 
   # account_id di un service account: massimo 30 caratteri. Se "<app_name>-run" non ci sta,
   # si tronca e si aggiunge un hash del nome completo per mantenerlo univoco e stabile.
